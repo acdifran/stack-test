@@ -1,0 +1,38 @@
+name: Approval check
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  approval-check:
+    name: Approval check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          ids() { git log --reverse --format=%H -n "$1" "$2" | while read -r c; do git show "$c" | git patch-id --verbatim | cut -d' ' -f1; done; }
+          n=$(git rev-list --count "$BASE..$HEAD")
+          cur=$(ids "$n" "$HEAD")
+          gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '.[] | select(.state=="APPROVED") | "\(.id) \(.commit_id)"' |
+          while read -r id sha; do
+            old=""
+            if git cat-file -e "$sha^{commit}" 2>/dev/null || git fetch -q origin "$sha"; then old=$(ids "$n" "$sha"); fi
+            if [ "$old" = "$cur" ]; then
+              echo "kept review $id (approved $sha, same code)"
+            else
+              gh api -X PUT "repos/$REPO/pulls/$PR/reviews/$id/dismissals" -f message="The code changed since this approval." -f event=DISMISS >/dev/null
+              echo "dismissed review $id (approved $sha, code changed)"
+            fi
+          done
