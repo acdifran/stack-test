@@ -1,0 +1,16 @@
+name: approve
+on:
+  workflow_dispatch:
+    inputs:
+      prs:
+        required: true
+permissions:
+  pull-requests: write
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PRS: ${{ inputs.prs }}
+        run: for n in $PRS; do gh pr review "$n" --approve -R "$GITHUB_REPOSITORY"; done
