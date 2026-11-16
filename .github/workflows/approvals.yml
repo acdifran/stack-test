@@ -26,7 +26,7 @@ jobs:
           set -euo pipefail
           read -r base head < <(gh api "repos/$REPO/pulls/$PR" --jq '"\(.base.sha) \(.head.sha)"')
           git fetch -q origin "$base" "$head"
-          ids() { git log --reverse --format=%H -n "$1" "$2" | while read -r c; do git show "$c" | git patch-id --verbatim | cut -d' ' -f1; done; }
+          ids() { git log --reverse --format=%H -n "$1" "$2" | while read -r c; do git show -U0 "$c" | git patch-id --verbatim | cut -d' ' -f1; done; }
           n=$(git rev-list --count "$base..$head")
           cur=$(ids "$n" "$head")
           approvals=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '.[] | select(.state=="APPROVED") | "\(.user.login) \(.commit_id)"')
