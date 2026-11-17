@@ -5,11 +5,9 @@ on:
   pull_request_review:
     types: [submitted, dismissed]
 permissions:
+  actions: write
   contents: read
   pull-requests: read
-concurrency:
-  group: approval-check-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 jobs:
   approval-check:
     name: Approval check
@@ -17,8 +15,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          sparse-checkout: .github/actions
+      - id: gate
+        uses: ./.github/actions/newest-run-gate
+        with:
+          token: ${{ github.token }}
+      - if: steps.gate.outputs.newest == 'true'
+        uses: actions/checkout@v7
+        with:
           fetch-depth: 0
-      - env:
+      - if: steps.gate.outputs.newest == 'true'
+        env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}

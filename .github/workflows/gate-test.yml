@@ -1,0 +1,24 @@
+name: Gate test
+on:
+  pull_request:
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    outputs:
+      newest: ${{ steps.gate.outputs.newest }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: gate
+        uses: ./.github/actions/newest-run-gate
+        with:
+          token: ${{ github.token }}
+  slow-guard:
+    name: Slow guard
+    needs: changes
+    if: needs.changes.outputs.newest != 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: sleep 45 && echo done

@@ -1,0 +1,47 @@
+name: Newest run gate
+description: >-
+  Lets only the newest run of a workflow for a pull request's head commit do
+  the work, and cancels runs still going for the PR's older commits.
+
+  A stack push rewrites a PR's base and head together, so GitHub fires two
+  pull_request events for the same commit. A per-PR concurrency group with
+  cancel-in-progress then cancels one of the two at random, and when it
+  cancels the newer run, GitHub (which reads the newest run's checks) reports
+  the required checks as failing. Run IDs increase with creation, so a run
+  that sees a higher ID for its commit is the stale duplicate and steps
+  aside; jobs skipped by `if` report as passing, and GitHub shows the newer
+  run's results anyway.
+inputs:
+  token:
+    description: Token with actions:write, to list and cancel runs.
+    required: true
+outputs:
+  newest:
+    description: "'false' when a newer run exists for this commit."
+    value: ${{ steps.gate.outputs.newest }}
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
+        SHA: ${{ github.event.pull_request.head.sha }}
+        BRANCH: ${{ github.event.pull_request.head.ref }}
+      run: |
+        set -euo pipefail
+        runs="repos/$REPO/actions/workflows/$(basename "${GITHUB_WORKFLOW_REF%@*}")/runs"
+        newer=$(gh api "$runs?head_sha=$SHA&per_page=100" --jq "[.workflow_runs[] | select(.id > $RUN_ID)] | length")
+        if [ "$newer" -gt 0 ]; then
+          echo "A newer run of this workflow exists for ${SHA:0:7}; leaving the checks to it."
+          echo "newest=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "newest=true" >> "$GITHUB_OUTPUT"
+        gh api "$runs?branch=$BRANCH&per_page=50" \
+          --jq ".workflow_runs[] | select(.id < $RUN_ID and .head_sha != \"$SHA\" and .status != \"completed\") | .id" |
+          while read -r id; do
+            gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null && echo "Cancelled run $id for an older commit." || true
+          done
